@@ -1,5 +1,6 @@
 # Google OKF — ShieldPulse Knowledge Bundle & MCP Server
 
+[![CI](https://github.com/natrajexplore/Google_OKF/actions/workflows/ci.yml/badge.svg)](https://github.com/natrajexplore/Google_OKF/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](pyproject.toml)
 [![MCP SDK 2.x](https://img.shields.io/badge/MCP%20SDK-2.x-6E56CF.svg)](https://modelcontextprotocol.io)
@@ -25,7 +26,7 @@ This repository packages the operating knowledge of **ShieldPulse**, a multi-ten
 Agents answering questions about a production SaaS (for example, *"Which tenants breached their remediation SLA, and what does that cost us in NRR?"*) need more than raw schemas. They need to know how tables, APIs, metrics, policies, and runbooks relate, and which facts changed recently. Wikis and tribal knowledge don't provide that in a form an agent can traverse. This project does:
 
 1. **Knowledge as code.** Each concept is a Markdown file with typed frontmatter, reviewed in pull requests and recorded in a change log.
-2. **Validated before merge.** A CI-ready conformance script catches missing types, broken links, and malformed content.
+2. **Validated in CI.** Every push and pull request runs a conformance check that catches missing types, broken links, and malformed content, plus the test suite.
 3. **Served to agents safely.** The MCP server is read-only and confined to the bundle, and it carries no tenant data.
 
 ## Key Features
@@ -141,7 +142,7 @@ bash validate-okf.sh [BUNDLE_DIR]   # default: ./shieldpulse-okf
 | Code fences | A file has an unclosed code block |
 | Links | A relative link points to a file that does not exist (`#anchors` are stripped; `https:`/`mailto:` links are skipped) |
 
-The script exits `1` on any failure, so it can gate CI. `.gitattributes` pins `*.sh` to LF line endings so the script runs on Windows checkouts too.
+The script exits `1` on any failure. [CI](.github/workflows/ci.yml) runs it, and then `pytest`, on Ubuntu and Windows for every push to `main` and every pull request. `.gitattributes` pins `*.sh` to LF line endings so the script runs on Windows checkouts too.
 
 ---
 
@@ -268,7 +269,7 @@ uv run pytest -q       # includes a real-bundle check that every index entry exi
 ## Roadmap
 
 - [ ] Resolve the open questions in `control_plane.md` and `mean_time_to_remediate.md`, and replace the draft sections with sourced content
-- [ ] Add a CI workflow that runs `validate-okf.sh` and `pytest` on every push
+- [x] Add a CI workflow that runs `validate-okf.sh` and `pytest` on every push
 - [ ] Build the reference ShieldPulse service the bundle describes (FastAPI webhook, PostgreSQL with RLS, MTTR/NRR queries)
 
 ## License
