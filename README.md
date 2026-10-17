@@ -1,6 +1,42 @@
 # Google OKF — ShieldPulse Knowledge Bundle & MCP Server
 
-A machine-readable knowledge bundle for **ShieldPulse**, a fictional multi-tenant B2B MicroSaaS that detects, scores, and remediates unauthorized firewall, SD-WAN, and cloud security-group drift. The repo also includes a **read-only MCP server** that lets AI agents (Claude Code, Claude Desktop, or any MCP client) navigate the bundle as a knowledge graph.
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](pyproject.toml)
+[![MCP SDK 2.x](https://img.shields.io/badge/MCP%20SDK-2.x-6E56CF.svg)](https://modelcontextprotocol.io)
+[![OKF v0.2](https://img.shields.io/badge/OKF-v0.2-2EA44F.svg)](shieldpulse-okf/index.md)
+
+**Domain knowledge that AI agents can navigate, validate, and trust.**
+
+This repository packages the operating knowledge of **ShieldPulse**, a multi-tenant B2B MicroSaaS that detects, scores, and remediates unauthorized firewall, SD-WAN, and cloud security-group drift. The knowledge is a version-controlled OKF bundle and is served to AI agents through a **read-only Model Context Protocol (MCP) server**.
+
+## Contents
+
+- [Why This Exists](#why-this-exists)
+- [Key Features](#key-features)
+- [The Knowledge Bundle](#the-knowledge-bundle)
+- [Quick Start](#quick-start)
+- [MCP Server](#mcp-server)
+- [Contributing](#contributing)
+- [Troubleshooting](#troubleshooting)
+- [Project Layout](#project-layout) · [Roadmap](#roadmap) · [License](#license)
+
+## Why This Exists
+
+Agents answering questions about a production SaaS (for example, *"Which tenants breached their remediation SLA, and what does that cost us in NRR?"*) need more than raw schemas. They need to know how tables, APIs, metrics, policies, and runbooks relate, and which facts changed recently. Wikis and tribal knowledge don't provide that in a form an agent can traverse. This project does:
+
+1. **Knowledge as code.** Each concept is a Markdown file with typed frontmatter, reviewed in pull requests and recorded in a change log.
+2. **Validated before merge.** A CI-ready conformance script catches missing types, broken links, and malformed content.
+3. **Served to agents safely.** The MCP server is read-only and confined to the bundle, and it carries no tenant data.
+
+## Key Features
+
+- **8 linked concepts** across architecture, data model, APIs, metrics, governance, and operations
+- **Graph traversal** with outgoing links and backlinks, so agents can follow a question across domains
+- **Change awareness:** `recent_changes` exposes `log.md`, so agents can check for breaking schema changes before relying on a schema
+- **Transparent provenance:** inferred content is labeled **Draft**, and unresolved points are listed as Open Questions
+- **Portable:** works with Claude Code, Claude Desktop, or any MCP client over stdio
+
+## At a Glance
 
 The repo contains three parts:
 
@@ -124,6 +160,25 @@ The server exposes the bundle to agents through six **read-only** tools. It re-r
 
 Recommended agent flow, which the server also sends as its instructions: **`get_index` → `read_concept` / `get_links` → `recent_changes` before relying on a schema.**
 
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant A as AI Agent
+    participant S as okf-bundle MCP server
+    participant B as shieldpulse-okf/
+    U->>A: "How is an MTTR SLA breach priced?"
+    A->>S: get_index()
+    S->>B: read index.md
+    S-->>A: domain map + traversal guide
+    A->>S: read_concept("metrics/mean_time_to_remediate.md")
+    S-->>A: SQL definition, SLA rules
+    A->>S: get_links(...) → read_concept("metrics/net_revenue_retention.md")
+    S-->>A: 5% credit rule, NRR formula
+    A->>S: recent_changes(since="2026-10-01")
+    S-->>A: SLA credit adjustment added 2026-10-17
+    A-->>U: Grounded answer citing bundle paths
+```
+
 ### Run It
 
 ```bash
@@ -180,6 +235,35 @@ The bundle contains **structural knowledge only**: no tenant data, credentials, 
 ├── validate-okf.sh             # bundle conformance check
 └── pyproject.toml
 ```
+
+## Contributing
+
+Changes to the bundle follow the same review process as code changes.
+
+**To add or update a concept:**
+
+1. Create or edit a file in the matching domain folder, e.g. `shieldpulse-okf/tables/<name>.md`, with the [frontmatter](#frontmatter-conventions) filled in. `type` is required.
+2. Link it to related concepts with **relative** Markdown links, e.g. `[tenants](../tables/tenants.md)`.
+3. For a new concept, add its path to `entries` in `index.md` and to the matching section of the index body.
+4. Add a dated entry to `log.md` describing the change. Call out breaking schema changes explicitly.
+5. Label anything inferred rather than sourced as `> **Draft section.**`.
+
+**Before opening a pull request:**
+
+```bash
+bash validate-okf.sh   # must print [PASS]
+uv run pytest -q       # includes a real-bundle check that every index entry exists and every link resolves
+```
+
+## Troubleshooting
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `ModuleNotFoundError: No module named 'mcp.server.fastmcp'` | Code written for MCP SDK 1.x | Use `from mcp.server.mcpserver import MCPServer` (this project targets 2.x) |
+| `validate-okf.sh: $'\r': command not found` | Script checked out with CRLF line endings | Fresh clones are fixed by `.gitattributes`; for an older checkout, run `sed -i 's/\r$//' validate-okf.sh` |
+| `No OKF bundle at '…' (index.md not found)` | Server started from the wrong directory | Pass the bundle path explicitly: `uv run google-okf /path/to/shieldpulse-okf` |
+| MCP tools missing in Claude Code | Server added after the session started | Run `/mcp` to reconnect, or start a new session |
+| `Unknown concept '…'` tool error | Path not relative to the bundle root | Use paths exactly as `list_concepts` returns them, e.g. `tables/tenants.md` |
 
 ## Roadmap
 
