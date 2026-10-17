@@ -2,6 +2,7 @@
 type: architecture
 title: "ShieldPulse Control Plane"
 description: "Multi-tenant FastAPI ingestion pipeline, drift evaluation engine, and agentic remediation workflow for firewall, SD-WAN, and cloud security group drift."
+resource: "https://api.shieldpulse.io"
 owners: ["platform-eng@shieldpulse.io", "secops-eng@shieldpulse.io"]
 tags: ["architecture", "multi-tenancy", "ingestion", "remediation", "draft"]
 timestamp: "2026-10-17T09:10:00Z"
