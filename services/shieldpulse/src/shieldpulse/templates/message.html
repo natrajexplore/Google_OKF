@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}
+<div class="card empty rise">
+  <h3>{{ title }}</h3>
+  <p>{{ message }}</p>
+  <p><br><a class="btn btn-ghost btn-sm" href="/app">Back to overview</a></p>
+</div>
+{% endblock %}

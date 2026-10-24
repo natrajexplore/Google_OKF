@@ -15,7 +15,8 @@ import psycopg
 import pytest
 from fastapi.testclient import TestClient
 from psycopg.conninfo import make_conninfo
-from support import APPROVAL_KEY, DISPATCH_KEY, SECRETS, TENANT_A, TENANT_B
+from support import (APPROVAL_KEY, DISPATCH_KEY, SECRETS, SESSION_KEY, TENANT_A, TENANT_B, USER_A, USER_B,
+                     password_hash)
 
 from shieldpulse.app import create_app
 from shieldpulse.db import Database
@@ -57,7 +58,8 @@ def pg():
 def admin_conn(pg):
     """Superuser connection (bypasses RLS) for arranging and inspecting data. Resets tables."""
     with psycopg.connect(pg[0], autocommit=True) as conn:
-        conn.execute("TRUNCATE public.remediation_jobs, public.policy_drift_events, public.tenants")
+        conn.execute("TRUNCATE public.remediation_jobs, public.tenant_users, public.policy_drift_events,"
+                     " public.tenants")
         conn.execute(
             "INSERT INTO public.tenants (tenant_id, org_name, plan_tier, mrr_inr, sla_mttr_target_sec,"
             " webhook_secret_arn, status) VALUES"
@@ -65,6 +67,11 @@ def admin_conn(pg):
             " (%s, 'Tenant B', 'growth', 60000, 3600, 'arn:test:b', 'ACTIVE')",
             [TENANT_A, TENANT_B],
         )
+        for tenant, user in ((TENANT_A, USER_A), (TENANT_B, USER_B)):
+            conn.execute(
+                "INSERT INTO public.tenant_users (tenant_id, email, display_name, password_hash)"
+                " VALUES (%s, %s, %s, %s)", [tenant, user["email"], user["name"], password_hash(user)],
+            )
         yield conn
 
 
@@ -80,9 +87,11 @@ def make_client(pg, admin_conn):
     """Build a TestClient; pass a RateLimiter to override the default limits."""
     clients = []
 
-    def _make(limiter: RateLimiter | None = None) -> TestClient:
+    def _make(limiter: RateLimiter | None = None, secure_cookies: bool = False) -> TestClient:
+        # TestClient talks plain http://testserver, where browsers (and httpx) drop Secure cookies.
         client = TestClient(create_app(Database(pg[1], max_size=2), LocalSecretStore(SECRETS), limiter,
-                                       approval_key=APPROVAL_KEY))
+                                       approval_key=APPROVAL_KEY, session_key=SESSION_KEY,
+                                       secure_cookies=secure_cookies), follow_redirects=False)
         client.__enter__()
         clients.append(client)
         return client

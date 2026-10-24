@@ -7,6 +7,7 @@ entries:
   - tables/tenants.md
   - tables/policy_drift_events.md
   - tables/remediation_jobs.md
+  - tables/tenant_users.md
   - apis/ingest_telemetry.md
   - metrics/net_revenue_retention.md
   - metrics/mean_time_to_remediate.md
@@ -32,6 +33,7 @@ Welcome to the canonical OKF bundle for **ShieldPulse**, an enterprise B2B Micro
 * [tenants](./tables/tenants.md) — Enterprise customer accounts, ARR tiers, SLA thresholds, and subscription states.
 * [policy_drift_events](./tables/policy_drift_events.md) — Time-series records of detected security rule deviations and remediation status.
 * [remediation_jobs](./tables/remediation_jobs.md) — *(draft)* Runbook work queue and remediation audit trail.
+* [tenant_users](./tables/tenant_users.md) — *(draft)* Tenant dashboard users who approve rollbacks.
 
 ### APIs & Integrations
 * [Telemetry Ingestion Webhook](./apis/ingest_telemetry.md) — Authenticated REST endpoint receiving configuration snapshots from customer appliances.

@@ -27,6 +27,9 @@ One row is created, in the same transaction as the event, for every [policy_drif
 | `run_after` | `TIMESTAMPTZ` | No | Earliest time a worker may act next (e.g. 60s after dispatch). |
 | `sla_met` | `BOOLEAN` | Yes | Set on `REMEDIATED`: elapsed time was within `sla_mttr_target_sec`. |
 | `last_error` | `TEXT` | Yes | Reason for the latest retry, skip, or failure. |
+| `decided_by` | `UUID` | Yes | **Draft (2026-10-24).** The [tenant_users](./tenant_users.md) member who approved or rejected; `NULL` for automatic runs and signed-link decisions. |
+| `decided_at` | `TIMESTAMPTZ` | Yes | **Draft (2026-10-24).** When the approval decision was made. |
+| `decided_via` | `VARCHAR(16)` | Yes | **Draft (2026-10-24).** `dashboard` (signed-in user) or `link` (signed approval link). |
 | `created_at`, `updated_at` | `TIMESTAMPTZ` | No | Audit timestamps. |
 
 ## State Machine

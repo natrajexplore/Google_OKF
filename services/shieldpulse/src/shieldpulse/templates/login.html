@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% from "_macros.html" import mark %}
+{% block title %}Sign in{% endblock %}
+{% block body %}
+<main class="auth">
+  <div class="auth-inner rise">
+    <a class="brand" href="/login">{{ mark() }}<span class="brand-name">ShieldPulse</span></a>
+    <div class="auth-title">
+      <h1>Welcome back</h1>
+      <p>Sign in to see your network's drift and remediation.</p>
+    </div>
+    <form class="card" method="post" action="/login" novalidate>
+      {% if error %}<div class="banner banner-bad" role="alert">{{ error }}</div>{% endif %}
+      <input type="hidden" name="next" value="{{ next }}">
+      <div class="field">
+        <label for="email">Work email</label>
+        <input class="input" id="email" name="email" type="email" autocomplete="username" required
+               value="{{ email or '' }}"{% if not email %} autofocus{% endif %}>
+      </div>
+      <div class="field">
+        <label for="password">Password</label>
+        <input class="input" id="password" name="password" type="password" autocomplete="current-password" required
+               {% if email %} autofocus{% endif %}>
+      </div>
+      <button class="btn btn-primary btn-block" type="submit">Continue</button>
+    </form>
+    {% if demo_hint %}
+    <div class="demo">
+      <b>Local demo accounts</b><br>
+      <code>secops@acme.example</code> / <code>acme-demo-2026</code> (auto-remediation)<br>
+      <code>soc@globex.example</code> / <code>globex-demo-2026</code> (manual approval)
+    </div>
+    {% endif %}
+  </div>
+</main>
+{% endblock %}

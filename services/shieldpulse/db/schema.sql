@@ -110,3 +110,52 @@ GRANT SELECT, UPDATE ON public.remediation_jobs TO shieldpulse_worker_role;
 
 CREATE POLICY worker_queue ON public.remediation_jobs TO shieldpulse_worker_role
     USING (true) WITH CHECK (true);
+
+-- DRAFT (dashboard): tenant UI users. Password hashes are scrypt (see shieldpulse/auth.py).
+CREATE TABLE public.tenant_users (
+    user_id       UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id     UUID         NOT NULL REFERENCES public.tenants (tenant_id),
+    email         TEXT         NOT NULL,
+    display_name  VARCHAR(120) NOT NULL,
+    password_hash TEXT         NOT NULL,
+    created_at    TIMESTAMPTZ  NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX tenant_users_email_key ON public.tenant_users (lower(email));
+
+ALTER TABLE public.tenant_users ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.tenant_users FORCE ROW LEVEL SECURITY;
+CREATE POLICY tenant_isolation ON public.tenant_users
+    USING (tenant_id = NULLIF(current_setting('app.current_tenant_id', true), '')::uuid);
+
+-- Approver identity for MANUAL_APPROVAL decisions (closes part of the approver-identity gap).
+ALTER TABLE public.remediation_jobs
+    ADD COLUMN decided_by  UUID REFERENCES public.tenant_users (user_id),
+    ADD COLUMN decided_at  TIMESTAMPTZ,
+    ADD COLUMN decided_via VARCHAR(16) CHECK (decided_via IN ('dashboard', 'link'));
+
+-- Login happens before the tenant is known, so RLS would hide every user row. This narrow
+-- function returns the single row matching one email. It runs as a dedicated NOLOGIN role,
+-- the only role whose policy sees users across tenants.
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'shieldpulse_login_role') THEN
+        CREATE ROLE shieldpulse_login_role NOLOGIN;
+    END IF;
+END
+$$;
+GRANT USAGE ON SCHEMA public TO shieldpulse_login_role;
+GRANT SELECT ON public.tenant_users TO shieldpulse_login_role;
+CREATE POLICY login_lookup ON public.tenant_users FOR SELECT TO shieldpulse_login_role USING (true);
+
+CREATE FUNCTION public.dashboard_login_lookup(p_email TEXT)
+RETURNS TABLE (user_id UUID, tenant_id UUID, display_name VARCHAR, password_hash TEXT)
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public AS $$
+    SELECT u.user_id, u.tenant_id, u.display_name, u.password_hash
+    FROM public.tenant_users u
+    WHERE lower(u.email) = lower(p_email)
+$$;
+ALTER FUNCTION public.dashboard_login_lookup(TEXT) OWNER TO shieldpulse_login_role;
+REVOKE ALL ON FUNCTION public.dashboard_login_lookup(TEXT) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.dashboard_login_lookup(TEXT) TO shieldpulse_api_role;
+
+GRANT SELECT ON public.tenant_users TO shieldpulse_api_role;

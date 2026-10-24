@@ -31,7 +31,7 @@ Agents answering questions about a production SaaS (for example, *"Which tenants
 
 ## Key Features
 
-- **9 linked concepts** across architecture, data model, APIs, metrics, governance, and operations
+- **10 linked concepts** across architecture, data model, APIs, metrics, governance, and operations
 - **Graph traversal** with outgoing links and backlinks, so agents can follow a question across domains
 - **Change awareness:** `recent_changes` exposes `log.md`, so agents can check for breaking schema changes before relying on a schema
 - **Transparent provenance:** inferred content is labeled **Draft**, and unresolved points are listed as Open Questions
@@ -47,6 +47,7 @@ The repo contains three parts:
 | Validator | [`validate-okf.sh`](validate-okf.sh) | CI-ready conformance check for frontmatter, code fences, and links |
 | MCP server | [`src/google_okf/`](src/google_okf/) | Six read-only tools for agents to traverse the bundle |
 | Service (Phases 1–2) | [`services/shieldpulse/`](services/shieldpulse/README.md) | HMAC-authenticated webhook, drift scoring, PostgreSQL row-level security, and a remediation worker that runs the P1 runbook |
+| Tenant dashboard | [`services/shieldpulse/`](services/shieldpulse/README.md#tenant-dashboard) | Browser UI on port 8000: overview, drift events, one-click approvals with approver identity, light and dark modes |
 
 ---
 
@@ -65,6 +66,7 @@ An OKF bundle is a directory of Markdown files. Each file is one **concept**: YA
 | Data model | [tenants](shieldpulse-okf/tables/tenants.md) | `table` | Customers, plan tiers, MRR, SLA targets, webhook secrets |
 | Data model | [policy_drift_events](shieldpulse-okf/tables/policy_drift_events.md) | `table` | Drift incidents, severity, blast radius, remediation timestamps |
 | Data model | [remediation_jobs](shieldpulse-okf/tables/remediation_jobs.md) | `table` | Runbook work queue and audit trail *(draft)* |
+| Data model | [tenant_users](shieldpulse-okf/tables/tenant_users.md) | `table` | Dashboard users who approve rollbacks *(draft)* |
 | APIs | [Telemetry Ingestion Webhook](shieldpulse-okf/apis/ingest_telemetry.md) | `api` | `POST /v1/telemetry/drift-snapshot`, HMAC-authenticated |
 | Metrics | [Net Revenue Retention](shieldpulse-okf/metrics/net_revenue_retention.md) | `metric` | NRR net of churn and SLA penalty credits |
 | Metrics | [Mean Time to Remediate](shieldpulse-okf/metrics/mean_time_to_remediate.md) | `metric` | P1/P2 detection-to-resolution time vs. SLA |
@@ -207,12 +209,24 @@ Asking *"Which concepts depend on the tenants table?"* leads an agent to call `g
 ```json
 {
   "path": "tables/tenants.md",
-  "outgoing": ["policies/tenant_isolation_soc2.md", "apis/ingest_telemetry.md", "tables/policy_drift_events.md",
-               "metrics/net_revenue_retention.md", "metrics/mean_time_to_remediate.md"],
-  "backlinks": ["apis/ingest_telemetry.md", "architecture/control_plane.md", "metrics/mean_time_to_remediate.md",
-                "metrics/net_revenue_retention.md", "policies/tenant_isolation_soc2.md",
-                "runbooks/critical_drift_remediation.md", "tables/policy_drift_events.md",
-                "tables/remediation_jobs.md"]
+  "outgoing": [
+    "policies/tenant_isolation_soc2.md",
+    "apis/ingest_telemetry.md",
+    "tables/policy_drift_events.md",
+    "metrics/net_revenue_retention.md",
+    "metrics/mean_time_to_remediate.md"
+  ],
+  "backlinks": [
+    "apis/ingest_telemetry.md",
+    "architecture/control_plane.md",
+    "metrics/mean_time_to_remediate.md",
+    "metrics/net_revenue_retention.md",
+    "policies/tenant_isolation_soc2.md",
+    "runbooks/critical_drift_remediation.md",
+    "tables/policy_drift_events.md",
+    "tables/remediation_jobs.md",
+    "tables/tenant_users.md"
+  ]
 }
 ```
 
@@ -237,7 +251,7 @@ The bundle contains **structural knowledge only**: no tenant data, credentials, 
 │   ├── bundle.py               # loader: frontmatter, links, backlinks, search, log
 │   └── server.py               # MCP tool definitions
 ├── tests/test_bundle.py        # loader, server, and real-bundle integrity tests
-├── services/shieldpulse/       # Phase 1 service (uv workspace member), with its own README
+├── services/shieldpulse/       # the service and tenant dashboard (uv workspace member), with its own README
 │   ├── db/                     #   schema.sql (RLS), dev role and seed scripts
 │   ├── src/shieldpulse/        #   app, db, scoring, rate limiting, secret store
 │   ├── tests/                  #   unit, ingestion, and RLS isolation tests
@@ -281,7 +295,9 @@ uv run pytest -q       # includes a real-bundle check that every index entry exi
 - [x] Add a CI workflow that runs `validate-okf.sh` and `pytest` on every push
 - [x] ShieldPulse service, Phase 1: ingestion webhook, drift scoring, RLS tenant isolation, MTTR ([details](services/shieldpulse/README.md))
 - [x] Service Phase 2: remediation runbook, covering AUTO rollback, signed approval links, convergence checks, and `remediated_at`
+- [x] Tenant dashboard: overview, drift events, approvals with approver identity, light and dark modes
 - [ ] Service Phase 3: NRR (needs MRR history) and BigQuery analytics
+- [ ] SSO for dashboard sign-in
 
 ## License
 

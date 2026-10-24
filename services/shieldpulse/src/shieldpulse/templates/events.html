@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% from "_macros.html" import severity as sev_badge, state_pill, time %}
+{% block title %}Drift events{% endblock %}
+{% block content %}
+<header class="page-head">
+  <div>
+    <h1>Drift events</h1>
+    <p class="muted">Every configuration change your appliances reported, newest first.</p>
+  </div>
+</header>
+
+<nav class="chips" aria-label="Filters">
+  {% for s in ["all"] + severities|list %}
+    <a class="chip" href="?severity={{ s }}&status={{ status }}"{% if severity == s %} aria-current="true"{% endif %}>{{ 'All severities' if s == 'all' else s }}</a>
+  {% endfor %}
+  <span class="chip-sep" aria-hidden="true"></span>
+  {% for st, label in [("all", "Any status"), ("open", "Open"), ("remediated", "Remediated")] %}
+    <a class="chip" href="?severity={{ severity }}&status={{ st }}"{% if status == st %} aria-current="true"{% endif %}>{{ label }}</a>
+  {% endfor %}
+</nav>
+
+<div class="card rise">
+  {% if rows %}
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Severity</th><th>Rule</th><th>Device</th><th>Blast radius</th><th>Detected</th><th>Status</th></tr></thead>
+      <tbody>
+      {% for e in rows %}
+        <tr>
+          <td>{{ sev_badge(e.severity) }}</td>
+          <td><a class="row-link" href="/app/events/{{ e.drift_id }}"><span class="rule">{{ e.rule_name or 'Unnamed rule' }}</span></a></td>
+          <td>{{ e.device_hostname }}<div class="faint">{{ e.vendor_type.replace('_', ' ') }}</div></td>
+          <td>{{ e.blast_radius_score }}</td>
+          <td>{{ time(e.detected_at) }}</td>
+          <td>{{ state_pill(e.remediated_at, e.job_state) }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if rows|length == 100 %}<p class="faint">Showing the 100 most recent matches.</p>{% endif %}
+  {% else %}
+  <div class="empty"><h3>Nothing matches</h3><p>Try a different severity or status.</p></div>
+  {% endif %}
+</div>
+{% endblock %}

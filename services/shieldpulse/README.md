@@ -132,6 +132,61 @@ stateDiagram-v2
 - **Safe approval links:** the link opens a confirmation page, and the approval happens on POST. Email and chat link scanners prefetch URLs, so a one-click GET could approve rollbacks nobody chose.
 - **SLA tracking:** `sla_met` on the job records whether `remediated_at - detected_at` stayed within `sla_mttr_target_sec`.
 
+## Tenant Dashboard
+
+A browser UI served by the API itself on **port 8000**: no separate frontend, build step or Node toolchain.
+
+![Dashboard overview, light mode](../../docs/screenshots/dashboard-overview-light.png)
+![Remediation page, dark mode](../../docs/screenshots/dashboard-remediation-dark.png)
+
+| Page | What it shows |
+|---|---|
+| `/app` Overview | Open drift, approvals waiting, 30-day MTTR against target, this month's SLA status, daily MTTR chart, recent drift |
+| `/app/events` | All drift events with severity and status filters; each opens a detail page with what changed and a timeline |
+| `/app/remediation` | Rollbacks awaiting approval (approve or reject), and history showing **who** decided, how, and whether the SLA was met |
+| `/app/settings` | Workspace and account details (read-only) |
+
+### Run it
+
+Start the API as above, with two more variables:
+
+```bash
+SHIELDPULSE_SESSION_KEY="dev-session-key" \
+SHIELDPULSE_INSECURE_COOKIES=1 \
+...  uv run uvicorn --factory shieldpulse.app:create_app_from_env --port 8000
+```
+
+Open <http://localhost:8000> and sign in with a demo account (shown on the login page in local dev):
+
+| Account | Password | Tenant |
+|---|---|---|
+| `secops@acme.example` | `acme-demo-2026` | Acme Networks, automatic rollback |
+| `soc@globex.example` | `globex-demo-2026` | Globex Retail, manual approval |
+
+For a 30-day trend in the chart, load the optional demo history:
+
+```bash
+docker compose exec -T postgres psql -U postgres -d shieldpulse -f - < dev/demo_history.sql
+```
+
+`SHIELDPULSE_INSECURE_COOKIES=1` is for plain-HTTP localhost only. Browsers drop `Secure` cookies over HTTP, and the setting also shows the demo-account hint. Never set it in production.
+
+### Design
+
+- **Tone:** a warm, calm look inspired by the tone of Claude's website, which was studied with REA's browser capture. It is an original palette (parchment, warm ink, terracotta accent) with system serif headings and system sans-serif body text. No third-party logos, fonts or copy are used, and no external requests are made.
+- **Themes:** light and dark follow the OS setting, and the moon button switches between them. The choice is remembered and applied before first paint, so there is no flash.
+- **Rendering:** charts are inline SVG rendered on the server, so they need no chart library and change color with the theme. Each point has a hover tooltip, and there are gaps on days without incidents.
+- **Responsive and accessible:** a sidebar on desktop and a top bar on phones; motion respects `prefers-reduced-motion`; landmarks, ARIA labels and visible focus rings throughout.
+
+### Security
+
+- **Sign-in:** passwords are scrypt-hashed. Unknown emails take the same time to fail as wrong passwords and get the same generic error. Sign-in is rate-limited to 10 attempts per email per minute.
+- **Sessions:** HMAC-signed, expire after 8 hours, and use `HttpOnly`, `SameSite=Strict` and `Secure` cookies.
+- **Forms:** every POST requires a CSRF token bound to the session.
+- **Isolation:** every page reads inside the user's tenant context, so RLS isolates the UI exactly as it does the webhook. Another tenant's event returns 404, and deciding another tenant's job changes nothing.
+- **Headers:** a strict Content-Security-Policy (`'self'` only, no inline scripts or styles), `no-store` caching, `frame-ancestors 'none'`, and `nosniff`.
+- **Untrusted data:** device-reported values such as rule names are HTML-escaped everywhere. A test checks this with a `<script>` payload.
+
 ## Tenant Isolation Design
 
 - **The API connects as `shieldpulse_app` and the worker as `shieldpulse_worker`.** These are login users in the group roles `shieldpulse_api_role` and `shieldpulse_worker_role`, which `schema.sql` creates and grants to. None of them is superuser or `BYPASSRLS`. Superusers bypass RLS even when it is FORCEd, so this role separation is what makes the policy meaningful. Tests fail if either role ever gains those privileges.
@@ -150,6 +205,7 @@ Each test session creates a throwaway database (`shieldpulse_test_<random>`), ap
 
 - **Scoring and rate limiting:** unit tests, no database needed
 - **Ingestion:** the happy path, auth failures, raw-byte signatures, `400` only after successful auth, `429` per tenant, trailing 30-day MTTR, and calendar-month credits (month boundaries, and month average versus single slow incident)
+- **Dashboard:** sign-in failures, hardened cookies, open-redirect protection, tampered and expired sessions, rate limiting, CSRF on every POST, tenant isolation in the UI, approver identity, HTML escaping, and chart rendering
 - **RLS:** each tenant sees only its own rows, no context means no rows, cross-tenant writes and moves are rejected, and no context leaks between pooled connections
 - **Runbook:** both the AUTO and MANUAL paths end to end; SLA miss; a rollback that never converges; an unreachable device; inactive tenants (including one that goes inactive while awaiting approval); tampered, expired, forged and cross-tenant approval tokens; GET never changing state; and concurrent workers never claiming the same job
 
