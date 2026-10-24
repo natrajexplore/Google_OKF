@@ -1,9 +1,8 @@
 """Drift severity and blast-radius scoring.
 
-DRAFT: the bundle defines the outputs (severity P1/P2/P3/INFO, blast_radius_score 0-100,
-runbook trigger at P1 or score >= 80) but not the formula, and it has no golden-state
-store yet, so every reported diff is treated as drift. These rules are a placeholder,
-derived from the runbook's P1 example: 0.0.0.0/0 ingress on 22/tcp or 3389/tcp.
+The rules below were derived from the runbook's P1 example (0.0.0.0/0 ingress on 22/tcp or
+3389/tcp) and confirmed on 2026-10-24 (architecture/control_plane.md, Resolved Questions).
+There is still no golden-state store, so every reported diff is treated as drift.
 """
 
 from __future__ import annotations

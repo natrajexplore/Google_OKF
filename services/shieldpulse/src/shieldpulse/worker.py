@@ -46,9 +46,9 @@ class Worker:
         dispatch_key: bytes,
         approval_key: bytes,
         approval_base_url: str,
-        convergence_delay_sec: int = 60,   # runbook Step 3: poll 60 seconds after dispatch
-        max_attempts: int = 5,             # DRAFT: retry budget for dispatch and convergence
-        approval_ttl_sec: int = 4 * 3600,  # DRAFT: approval link lifetime
+        convergence_delay_sec: int = 60,  # runbook Step 3: poll 60 seconds after dispatch
+        max_attempts: int = 3,            # retry budget for dispatch and convergence (confirmed 2026-10-24)
+        approval_ttl_sec: int = 3600,     # approval link lifetime (confirmed 2026-10-24)
     ):
         self.db = db
         self.device = device

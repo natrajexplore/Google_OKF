@@ -84,8 +84,8 @@ def test_rate_limit_returns_429_with_retry_after(make_client):
     assert client.post(PATH, content=body, headers=signed_headers(TENANT_B, body)).status_code == 202
 
 
-def test_mttr_and_sla_breach(make_client, admin_conn):
-    # Tenant A (target 900s): P1 fixed in 600s, P2 in 1800s -> mean 1200s, breached.
+def test_trailing_30_day_mttr(make_client, admin_conn):
+    # Tenant A (target 900s): P1 fixed in 600s, P2 in 1800s -> mean 1200s, above target.
     # Excluded: a P3, an unresolved P1, and Tenant B's incident.
     admin_conn.execute(
         "INSERT INTO public.policy_drift_events"
@@ -101,12 +101,58 @@ def test_mttr_and_sla_breach(make_client, admin_conn):
     client = make_client()
     resp = client.get("/v1/metrics/mttr", headers=signed_headers(TENANT_A, b""))
     assert resp.status_code == 200, resp.text
-    data = resp.json()
-    assert data["resolved_p1_p2_incidents"] == 2
-    assert round(data["mttr_seconds"]) == 1200
-    assert (data["sla_breached"], data["sla_credit_eligible"]) == (True, True)
+    trailing = resp.json()["trailing_30_days"]
+    assert trailing["resolved_p1_p2_incidents"] == 2
+    assert round(trailing["mttr_seconds"]) == 1200
+    assert trailing["above_target"] is True
 
-    # Tenant B (growth, target 3600s): one 3600s incident -> not breached, never credit-eligible.
-    data_b = client.get("/v1/metrics/mttr", headers=signed_headers(TENANT_B, b"")).json()
-    assert data_b["resolved_p1_p2_incidents"] == 1
-    assert (data_b["sla_breached"], data_b["sla_credit_eligible"]) == (False, False)
+    # Tenant B (target 3600s): one 3600s incident -> not above target.
+    trailing_b = client.get("/v1/metrics/mttr", headers=signed_headers(TENANT_B, b"")).json()["trailing_30_days"]
+    assert (trailing_b["resolved_p1_p2_incidents"], trailing_b["above_target"]) == (1, False)
+
+
+def seed_month(admin_conn, tenant, *rows):
+    """rows: (detected_at UTC literal, seconds to remediate)."""
+    for detected, secs in rows:
+        admin_conn.execute(
+            "INSERT INTO public.policy_drift_events (tenant_id, device_hostname, vendor_type, severity,"
+            " blast_radius_score, remediation_mode, detected_at, remediated_at)"
+            " VALUES (%s, 'fw', 'fortigate', 'P1', 95, 'AUTO', %s::timestamptz, %s::timestamptz + make_interval(secs => %s))",
+            [tenant, detected, detected, secs],
+        )
+
+
+def test_credit_uses_calendar_month_average(make_client, admin_conn):
+    # Tenant A target 900s. March 2026: incidents of 600s and 1500s -> average 1050s -> breach.
+    # Boundary incidents just outside March (Feb 28 23:59:59 and Apr 1 00:00:00 UTC) are excluded.
+    seed_month(admin_conn, TENANT_A,
+               ("2026-03-01 00:00:00+00", 600), ("2026-03-31 23:59:59+00", 1500),
+               ("2026-02-28 23:59:59+00", 99999), ("2026-04-01 00:00:00+00", 99999))
+    client = make_client()
+    month = client.get("/v1/metrics/mttr", params={"month": "2026-03"},
+                       headers=signed_headers(TENANT_A, b"")).json()["billing_month"]
+    assert (month["month"], month["resolved_p1_p2_incidents"], round(month["mttr_seconds"])) == ("2026-03", 2, 1050)
+    assert (month["sla_breached"], month["sla_credit_eligible"], month["credit_percent"]) == (True, True, 5)
+
+
+def test_one_slow_incident_does_not_breach_if_month_average_is_within_target(make_client, admin_conn):
+    # Per-incident breach is NOT the rule: 2000s once, but the May average is 800s (target 900s).
+    seed_month(admin_conn, TENANT_A, ("2026-05-02 10:00:00+00", 2000), ("2026-05-03 10:00:00+00", 200),
+               ("2026-05-04 10:00:00+00", 200))
+    month = make_client().get("/v1/metrics/mttr", params={"month": "2026-05"},
+                              headers=signed_headers(TENANT_A, b"")).json()["billing_month"]
+    assert (round(month["mttr_seconds"]), month["sla_breached"], month["credit_percent"]) == (800, False, 0)
+
+
+def test_growth_tier_breach_is_never_credit_eligible(make_client, admin_conn):
+    seed_month(admin_conn, TENANT_B, ("2026-03-10 10:00:00+00", 7200))  # target 3600s
+    month = make_client().get("/v1/metrics/mttr", params={"month": "2026-03"},
+                              headers=signed_headers(TENANT_B, b"")).json()["billing_month"]
+    assert (month["sla_breached"], month["sla_credit_eligible"], month["credit_percent"]) == (True, False, 0)
+
+
+def test_invalid_month_is_400(make_client):
+    client = make_client()
+    for bad in ("2026-13", "2026-3", "March"):
+        resp = client.get("/v1/metrics/mttr", params={"month": bad}, headers=signed_headers(TENANT_A, b""))
+        assert resp.status_code == 400, bad

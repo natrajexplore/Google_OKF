@@ -18,7 +18,7 @@ $$\text{NRR} = \frac{\text{Starting MRR} + \text{Expansion MRR} - \text{Contract
 
 ## Source Data & Lineage
 * **Base Revenue:** Aggregated from `mrr_inr` and `status` in [tenants](../tables/tenants.md).
-* **SLA Penalty Credits:** Calculated when a tenant on the `enterprise_plus` tier experiences a monthly [Mean Time to Remediate (MTTR)](./mean_time_to_remediate.md) exceeding their contracted `sla_mttr_target_sec` in [tenants](../tables/tenants.md). Each breach deducts 5% of monthly invoice value as an automated credit.
+* **SLA Penalty Credits:** Calculated when a tenant on the `enterprise_plus` tier experiences a monthly [Mean Time to Remediate (MTTR)](./mean_time_to_remediate.md) exceeding their contracted `sla_mttr_target_sec` in [tenants](../tables/tenants.md). Each breach deducts 5% of monthly invoice value as an automated credit. *Confirmed 2026-10-24:* "monthly" means the calendar billing month (UTC, by `detected_at`), and a breach is that month's **average** P1/P2 MTTR exceeding the target, so there is at most one 5% credit per tenant per month.
 
 ## Target Benchmarks
 * **Healthy MicroSaaS Threshold:** Greater than 115% annualized.

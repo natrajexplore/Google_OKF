@@ -15,7 +15,7 @@ Receives real-time configuration diffs or periodic state snapshots from customer
 ## Endpoint Specification
 * **Method & Path:** `POST /v1/telemetry/drift-snapshot`
 * **Authentication:** Requires headers `X-Tenant-ID` (matching `tenant_id` in [tenants](../tables/tenants.md)) and `X-ShieldPulse-Signature` (HMAC-SHA256 hex digest of the raw body signed with the secret at `webhook_secret_arn`).
-* **Rate Limit:** 500 requests/minute for `growth`, 5,000 requests/minute for `enterprise_plus`.
+* **Rate Limit:** 500 requests/minute for `growth`, 2,000 requests/minute for `business` (confirmed 2026-10-24), 5,000 requests/minute for `enterprise_plus`.
 
 ## Request Payload Example
 
@@ -49,7 +49,7 @@ Receives real-time configuration diffs or periodic state snapshots from customer
 
 ## Responses
 
-> **Draft section.** The original specification does not define response codes. These are inferred from the authentication and rate-limit rules above. Confirm them before relying on them.
+> **Confirmed 2026-10-24.** Originally inferred from the authentication and rate-limit rules above, and now canonical.
 
 | Status | Meaning |
 |---|---|

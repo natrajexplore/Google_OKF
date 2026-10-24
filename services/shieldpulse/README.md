@@ -10,7 +10,7 @@ A reference implementation of the [ShieldPulse Control Plane](../../shieldpulse-
 
 ## What's Implemented — and Where It Comes From
 
-Every behavior traces to a bundle concept. Where the bundle is silent, the code is marked **DRAFT** and kept behind a small interface so it can be replaced.
+Every behavior traces to a bundle concept. Where the bundle was silent, the code was marked **DRAFT**. Decisions confirmed on 2026-10-24 are marked **Confirmed**, and the rest remain DRAFT behind small interfaces so they can be replaced.
 
 | Behavior | Code | Source |
 |---|---|---|
@@ -20,17 +20,18 @@ Every behavior traces to a bundle concept. Where the bundle is silent, the code 
 | Rate limits: 500/min for `growth`, 5,000/min for `enterprise_plus` | [`ratelimit.py`](src/shieldpulse/ratelimit.py) | ingest_telemetry |
 | Runbook trigger: `P1` or `blast_radius_score >= 80` | [`scoring.py`](src/shieldpulse/scoring.py) | [runbook](../../shieldpulse-okf/runbooks/critical_drift_remediation.md) |
 | MTTR: P1/P2, resolved, trailing 30 days; credits apply to `enterprise_plus` only | [`app.py`](src/shieldpulse/app.py) | [MTTR](../../shieldpulse-okf/metrics/mean_time_to_remediate.md), [NRR](../../shieldpulse-okf/metrics/net_revenue_retention.md) |
-| **DRAFT:** response codes 202 / 400 / 401 / 429 | `app.py` | Draft section of ingest_telemetry |
-| **DRAFT:** severity and score rules (below) | `scoring.py` | Inferred from the runbook's P1 example |
+| **Confirmed:** response codes 202 / 400 / 401 / 429 | `app.py` | ingest_telemetry (confirmed 2026-10-24) |
+| **Confirmed:** severity and score rules (below) | `scoring.py` | control_plane, Resolved Questions (2026-10-24) |
 | Runbook: tenant must be `ACTIVE`; AUTO dispatches a signed rollback; MANUAL sends a signed approval link; poll 60s after dispatch; set `remediated_at`; check the SLA | [`worker.py`](src/shieldpulse/worker.py), [`remediation.py`](src/shieldpulse/remediation.py) | runbook |
 | **DRAFT:** `tenants.remediation_mode` (default `MANUAL_APPROVAL`), `policy_drift_events.rule_name` and `diff_summary`, and the `remediation_jobs` queue | `db/schema.sql` | Recorded in the bundle as draft schema changes ([log](../../shieldpulse-okf/log.md), 2026-10-24) |
-| **DRAFT:** 5-attempt retry budget; 4-hour approval link lifetime | `worker.py` | Not specified in the bundle |
+| **Confirmed:** 3-attempt retry budget; 1-hour approval link lifetime | `worker.py` | control_plane, Resolved Questions (2026-10-24) |
 | **DRAFT:** simulated device and logging notifier in place of NETCONF/REST and Slack/PagerDuty | `remediation.py` | No device or notifier integration yet |
-| **DRAFT:** `business` tier limited to 500/min | `ratelimit.py` | Not specified in the bundle |
+| **Confirmed:** `business` tier limited to 2,000/min | `ratelimit.py` | ingest_telemetry (confirmed 2026-10-24) |
+| **Confirmed:** SLA credits use the calendar month's average MTTR, with at most one 5% credit per month | `app.py` | MTTR and NRR concepts (confirmed 2026-10-24) |
 | **DRAFT:** `GET /v1/metrics/mttr` endpoint | `app.py` | Not in the bundle |
 | **DRAFT:** local JSON secret store in place of KMS | [`secret_store.py`](src/shieldpulse/secret_store.py) | KMS integration not built yet |
 
-### Draft Scoring Rules
+### Scoring Rules (Confirmed)
 
 The bundle has no golden-state store yet, so every reported `diff_summary` is treated as drift.
 
@@ -98,7 +99,7 @@ Sign the **exact bytes** you send. Re-serializing the JSON (for example, pretty-
 | Method & path | Auth | Responses |
 |---|---|---|
 | `POST /v1/telemetry/drift-snapshot` | `X-Tenant-ID` + `X-ShieldPulse-Signature` | `202` with recorded events · `400` invalid payload · `401` unknown tenant or bad signature (deliberately indistinguishable) · `429` with `Retry-After` |
-| `GET /v1/metrics/mttr` *(draft)* | Same headers, signature over the empty body | Trailing 30-day MTTR, `sla_breached`, `sla_credit_eligible` |
+| `GET /v1/metrics/mttr[?month=YYYY-MM]` *(draft endpoint)* | Same headers, signature over the empty body | `trailing_30_days` (dashboard view) and `billing_month` (the month's average, `sla_breached`, `sla_credit_eligible`, `credit_percent`); `400` for a bad `month` |
 | `GET /v1/remediation/approve?token=…` | Signed approval token | Confirmation page only; never changes state · `403` bad or expired token · `409` already decided |
 | `POST /v1/remediation/approve` | Token and `decision=approve\|reject` (form) | Approves or rejects, exactly once |
 | `GET /healthz` | None | `{"status": "ok"}` |
@@ -148,7 +149,7 @@ uv run pytest -v services/shieldpulse/tests         # from the repo root
 Each test session creates a throwaway database (`shieldpulse_test_<random>`), applies the schema and app role, and drops it afterwards. The tests cover:
 
 - **Scoring and rate limiting:** unit tests, no database needed
-- **Ingestion:** the happy path, auth failures, raw-byte signatures, `400` only after successful auth, `429` per tenant, and the MTTR maths
+- **Ingestion:** the happy path, auth failures, raw-byte signatures, `400` only after successful auth, `429` per tenant, trailing 30-day MTTR, and calendar-month credits (month boundaries, and month average versus single slow incident)
 - **RLS:** each tenant sees only its own rows, no context means no rows, cross-tenant writes and moves are rejected, and no context leaks between pooled connections
 - **Runbook:** both the AUTO and MANUAL paths end to end; SLA miss; a rollback that never converges; an unreachable device; inactive tenants (including one that goes inactive while awaiting approval); tampered, expired, forged and cross-tenant approval tokens; GET never changing state; and concurrent workers never claiming the same job
 

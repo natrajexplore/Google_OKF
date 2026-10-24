@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hmac
 import os
+import re
 from contextlib import asynccontextmanager
 from hashlib import sha256
 from html import escape
@@ -28,6 +29,8 @@ from shieldpulse.secret_store import LocalSecretStore, SecretStore
 
 # Unknown tenants and bad signatures share one response so tenant existence never leaks.
 UNAUTHORIZED = HTTPException(status_code=401, detail="Invalid tenant or signature")
+MONTH_RE = re.compile(r"\d{4}-(0[1-9]|1[0-2])")
+SLA_CREDIT_PERCENT = 5  # metrics/net_revenue_retention.md
 
 
 class DiffSummary(BaseModel):
@@ -159,27 +162,57 @@ def create_app(
     # DRAFT endpoint: not in the bundle. Exposes metrics/mean_time_to_remediate.md to the
     # tenant itself, authenticated like the webhook (HMAC over the empty body).
     @app.get("/v1/metrics/mttr")
-    def get_mttr(tenant: Tenant = Depends(authenticate)) -> dict[str, Any]:
+    def get_mttr(month: str | None = None, tenant: Tenant = Depends(authenticate)) -> dict[str, Any]:
+        """Trailing 30-day MTTR for dashboards, plus the calendar-month MTTR that governs SLA credits.
+
+        month: billing month as YYYY-MM (UTC, by detected_at). Defaults to the current month.
+        """
+        if month is not None and not MONTH_RE.fullmatch(month):
+            raise HTTPException(status_code=400, detail="month must be YYYY-MM")
         with db.tenant_tx(tenant.tenant_id) as conn:
             row = conn.execute(
-                "SELECT AVG(EXTRACT(EPOCH FROM (remediated_at - detected_at)))::float AS mttr_seconds,"
-                "       COUNT(*) AS incidents"
-                " FROM public.policy_drift_events"
-                " WHERE severity IN ('P1', 'P2')"
-                "   AND remediated_at IS NOT NULL"
-                "   AND detected_at >= CURRENT_DATE - INTERVAL '30 days'",
+                "WITH resolved AS ("
+                "  SELECT detected_at AT TIME ZONE 'UTC' AS detected_utc, detected_at,"
+                "         EXTRACT(EPOCH FROM (remediated_at - detected_at)) AS secs"
+                "  FROM public.policy_drift_events"
+                "  WHERE severity IN ('P1', 'P2') AND remediated_at IS NOT NULL"
+                "), billing AS ("
+                "  SELECT COALESCE(%(month)s::date, date_trunc('month', now() AT TIME ZONE 'UTC')::date) AS start"
+                ")"
+                " SELECT"
+                "  (SELECT AVG(secs)::float FROM resolved"
+                "    WHERE detected_at >= CURRENT_DATE - INTERVAL '30 days') AS trailing_mttr,"
+                "  (SELECT COUNT(*) FROM resolved"
+                "    WHERE detected_at >= CURRENT_DATE - INTERVAL '30 days') AS trailing_count,"
+                "  (SELECT AVG(secs)::float FROM resolved, billing"
+                "    WHERE detected_utc >= start AND detected_utc < start + INTERVAL '1 month') AS month_mttr,"
+                "  (SELECT COUNT(*) FROM resolved, billing"
+                "    WHERE detected_utc >= start AND detected_utc < start + INTERVAL '1 month') AS month_count,"
+                "  (SELECT to_char(start, 'YYYY-MM') FROM billing) AS month",
+                {"month": f"{month}-01" if month else None},
             ).fetchone()
-        mttr = row["mttr_seconds"]
-        breached = mttr is not None and mttr > tenant.sla_mttr_target_sec
+        target = tenant.sla_mttr_target_sec
+        trailing, monthly = row["trailing_mttr"], row["month_mttr"]
+        # Confirmed 2026-10-24: a breach is the calendar month's average above target, and earns
+        # at most one 5% credit, for enterprise_plus only (metrics/net_revenue_retention.md).
+        breached = monthly is not None and monthly > target
+        credit_eligible = breached and tenant.plan_tier == "enterprise_plus"
         return {
             "tenant_id": str(tenant.tenant_id),
-            "window": "trailing_30_days",
-            "resolved_p1_p2_incidents": row["incidents"],
-            "mttr_seconds": mttr,
-            "sla_mttr_target_sec": tenant.sla_mttr_target_sec,
-            "sla_breached": breached,
-            # Credits apply to enterprise_plus only (metrics/net_revenue_retention.md).
-            "sla_credit_eligible": breached and tenant.plan_tier == "enterprise_plus",
+            "sla_mttr_target_sec": target,
+            "trailing_30_days": {
+                "mttr_seconds": trailing,
+                "resolved_p1_p2_incidents": row["trailing_count"],
+                "above_target": trailing is not None and trailing > target,
+            },
+            "billing_month": {
+                "month": row["month"],
+                "mttr_seconds": monthly,
+                "resolved_p1_p2_incidents": row["month_count"],
+                "sla_breached": breached,
+                "sla_credit_eligible": credit_eligible,
+                "credit_percent": SLA_CREDIT_PERCENT if credit_eligible else 0,
+            },
         }
 
     if approval_key is not None:
