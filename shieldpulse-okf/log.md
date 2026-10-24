@@ -3,6 +3,10 @@
 Chronological audit trail of schema, metric, and operational updates across the ShieldPulse OKF bundle.
 
 ## 2026-10-24
+* **Confirmed Draft Decisions:**
+  * SLA credits use the calendar billing month, with a breach being the month's average MTTR above target (at most one 5% credit per month); see [mean_time_to_remediate.md](./metrics/mean_time_to_remediate.md) and [net_revenue_retention.md](./metrics/net_revenue_retention.md).
+  * `business` tier rate limit is 2,000/min, and the webhook response codes are canonical ([ingest_telemetry.md](./apis/ingest_telemetry.md)).
+  * Scoring rules, the job queue, a 3-attempt retry budget and 1-hour approval links are adopted, and [control_plane.md](./architecture/control_plane.md) now points to the reference implementation, with its remaining open questions narrowed.
 * **Remediation Schema (Draft):** Added `remediation_mode` to [tenants.md](./tables/tenants.md), added `rule_name` and `diff_summary` to [policy_drift_events.md](./tables/policy_drift_events.md), and introduced [remediation_jobs.md](./tables/remediation_jobs.md) as the [runbook](./runbooks/critical_drift_remediation.md) work queue and audit trail. These are additive, nullable or defaulted columns, with no breaking change to existing queries.
 
 ## 2026-10-17

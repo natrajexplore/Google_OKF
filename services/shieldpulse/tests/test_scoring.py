@@ -40,3 +40,16 @@ def test_rate_limiter_unknown_tier_uses_strictest_limit():
     tenant = uuid.uuid4()
     assert limiter.check(tenant, "mystery") is None
     assert limiter.check(tenant, "mystery") is not None
+
+
+def test_confirmed_defaults():
+    """Values confirmed on 2026-10-24 (see shieldpulse-okf/log.md)."""
+    import inspect
+
+    from shieldpulse.ratelimit import DEFAULT_LIMITS
+    from shieldpulse.worker import Worker
+
+    assert DEFAULT_LIMITS == {"growth": 500, "business": 2000, "enterprise_plus": 5000}
+    params = inspect.signature(Worker).parameters
+    assert (params["max_attempts"].default, params["approval_ttl_sec"].default,
+            params["convergence_delay_sec"].default) == (3, 3600, 60)

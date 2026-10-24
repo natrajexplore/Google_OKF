@@ -12,9 +12,8 @@ import time
 from collections.abc import Callable
 from uuid import UUID
 
-# Sourced: growth 500/min, enterprise_plus 5,000/min.
-# DRAFT: the bundle gives no limit for business; it gets the growth limit until specified.
-DEFAULT_LIMITS = {"growth": 500, "business": 500, "enterprise_plus": 5000}
+# apis/ingest_telemetry.md. The business limit was confirmed on 2026-10-24.
+DEFAULT_LIMITS = {"growth": 500, "business": 2000, "enterprise_plus": 5000}
 WINDOW_SEC = 60
 
 
