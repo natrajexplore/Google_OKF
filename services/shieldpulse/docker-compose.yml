@@ -1,0 +1,24 @@
+# DEV ONLY: local PostgreSQL with the schema, app role, and demo tenants preloaded.
+# Init scripts run once, on first start of an empty volume (`docker compose down -v` to reset).
+services:
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: shieldpulse
+    ports:
+      - "55432:5432"
+    volumes:
+      - ./db/schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+      - ./db/dev_roles.sql:/docker-entrypoint-initdb.d/02_dev_roles.sql:ro
+      - ./db/dev_seed.sql:/docker-entrypoint-initdb.d/03_dev_seed.sql:ro
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d shieldpulse"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+volumes:
+  pgdata:

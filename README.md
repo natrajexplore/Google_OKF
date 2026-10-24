@@ -46,6 +46,7 @@ The repo contains three parts:
 | Knowledge bundle | [`shieldpulse-okf/`](shieldpulse-okf/index.md) | OKF v0.2 concept files covering schemas, APIs, metrics, policies, and runbooks |
 | Validator | [`validate-okf.sh`](validate-okf.sh) | CI-ready conformance check for frontmatter, code fences, and links |
 | MCP server | [`src/google_okf/`](src/google_okf/) | Six read-only tools for agents to traverse the bundle |
+| Service (Phase 1) | [`services/shieldpulse/`](services/shieldpulse/README.md) | FastAPI webhook with HMAC auth, drift scoring, and PostgreSQL row-level security |
 
 ---
 
@@ -123,7 +124,7 @@ Requirements: Python ≥ 3.11 and [uv](https://docs.astral.sh/uv/).
 ```bash
 git clone https://github.com/natrajexplore/Google_OKF.git
 cd Google_OKF
-uv sync                      # install mcp, pyyaml, and pytest
+uv sync --all-packages       # install the MCP server, the ShieldPulse service, and dev tools
 
 bash validate-okf.sh         # validate the bundle
 uv run pytest -q             # run the tests
@@ -233,6 +234,11 @@ The bundle contains **structural knowledge only**: no tenant data, credentials, 
 │   ├── bundle.py               # loader: frontmatter, links, backlinks, search, log
 │   └── server.py               # MCP tool definitions
 ├── tests/test_bundle.py        # loader, server, and real-bundle integrity tests
+├── services/shieldpulse/       # Phase 1 service (uv workspace member), with its own README
+│   ├── db/                     #   schema.sql (RLS), dev role and seed scripts
+│   ├── src/shieldpulse/        #   app, db, scoring, rate limiting, secret store
+│   ├── tests/                  #   unit, ingestion, and RLS isolation tests
+│   └── docker-compose.yml      #   local PostgreSQL 17
 ├── validate-okf.sh             # bundle conformance check
 └── pyproject.toml
 ```
@@ -270,7 +276,9 @@ uv run pytest -q       # includes a real-bundle check that every index entry exi
 
 - [ ] Resolve the open questions in `control_plane.md` and `mean_time_to_remediate.md`, and replace the draft sections with sourced content
 - [x] Add a CI workflow that runs `validate-okf.sh` and `pytest` on every push
-- [ ] Build the reference ShieldPulse service the bundle describes (FastAPI webhook, PostgreSQL with RLS, MTTR/NRR queries)
+- [x] ShieldPulse service, Phase 1: ingestion webhook, drift scoring, RLS tenant isolation, MTTR ([details](services/shieldpulse/README.md))
+- [ ] Service Phase 2: remediation runbook (AUTO rollback, approval links, convergence, `remediated_at`)
+- [ ] Service Phase 3: NRR (needs MRR history) and BigQuery analytics
 
 ## License
 
