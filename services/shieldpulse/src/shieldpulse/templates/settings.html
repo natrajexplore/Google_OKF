@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Settings{% endblock %}
+{% block content %}
+<header class="page-head">
+  <div>
+    <h1>Settings</h1>
+    <p class="muted">Your workspace and account. Changes are made by your ShieldPulse administrator.</p>
+  </div>
+</header>
+
+<section class="card rise">
+  <div class="card-head"><h2>Workspace</h2></div>
+  <dl class="facts">
+    <div class="fact"><dt>Organization</dt><dd>{{ user.org_name }}</dd></div>
+    <div class="fact"><dt>Plan</dt><dd>{{ user.plan_tier.replace('_', ' ')|capitalize }}</dd></div>
+    <div class="fact"><dt>Account status</dt><dd><span class="pill {{ 'st-ok' if user.status == 'ACTIVE' else 'st-bad' }}">{{ user.status|capitalize }}</span></dd></div>
+    <div class="fact"><dt>Remediation</dt><dd>{{ 'Automatic rollback' if user.remediation_mode == 'AUTO' else 'Manual approval' }}</dd></div>
+    <div class="fact"><dt>MTTR target</dt><dd>{{ user.sla_mttr_target_sec|duration }}</dd></div>
+    <div class="fact"><dt>Workspace ID</dt><dd class="mono">{{ user.tenant_id }}</dd></div>
+  </dl>
+</section>
+
+<section class="card rise">
+  <div class="card-head"><h2>Your account</h2></div>
+  <dl class="facts">
+    <div class="fact"><dt>Name</dt><dd>{{ user.display_name }}</dd></div>
+    <div class="fact"><dt>Email</dt><dd>{{ user.email }}</dd></div>
+    <div class="fact"><dt>Theme</dt><dd>Follows your system. Use the moon button to switch.</dd></div>
+  </dl>
+</section>
+{% endblock %}

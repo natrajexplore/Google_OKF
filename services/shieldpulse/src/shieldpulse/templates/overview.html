@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% from "_macros.html" import severity, state_pill, time %}
+{% block title %}Overview{% endblock %}
+{% block content %}
+{% set t = summary.trailing_30_days %}
+{% set m = summary.billing_month %}
+<header class="page-head">
+  <div>
+    <div class="eyebrow">{{ user.org_name }} · {{ user.plan_tier.replace('_', ' ') }}</div>
+    <h1>Good to see you, {{ user.display_name.split(' ')[0] }}</h1>
+    <p class="muted">
+      {% if counts.open_p1 %}{{ counts.open_p1 }} critical drift{{ 's' if counts.open_p1 != 1 }} still open.
+      {% elif counts.awaiting_approval %}Nothing critical is open, but {{ counts.awaiting_approval }} rollback{{ 's' if counts.awaiting_approval != 1 }} need{{ 's' if counts.awaiting_approval == 1 }} your decision.
+      {% else %}Everything is in its golden state. Nothing needs you right now.{% endif %}
+    </p>
+  </div>
+  {% if counts.awaiting_approval %}<a class="btn btn-accent" href="/app/remediation">Review approvals</a>{% endif %}
+</header>
+
+<section class="grid-kpi" aria-label="Key figures">
+  <a class="card kpi rise" href="/app/events?status=open">
+    <span class="kpi-label">Open drift</span>
+    <span class="kpi-value">{{ counts.open_events }}</span>
+    <span class="kpi-note">{% if counts.open_p1 %}<span class="tone-bad">{{ counts.open_p1 }} P1</span> · {% endif %}{{ counts.events_7d }} detected this week</span>
+  </a>
+  <a class="card kpi rise" href="/app/remediation">
+    <span class="kpi-label">Awaiting approval</span>
+    <span class="kpi-value">{{ counts.awaiting_approval }}</span>
+    <span class="kpi-note">{{ counts.in_flight }} in flight{% if counts.failed %} · <span class="tone-bad">{{ counts.failed }} failed</span>{% endif %}</span>
+  </a>
+  <div class="card kpi rise">
+    <span class="kpi-label">MTTR · last 30 days</span>
+    <span class="kpi-value {{ 'tone-bad' if t.above_target else '' }}">{{ t.mttr_seconds|duration }}</span>
+    <span class="kpi-note">Target {{ summary.sla_mttr_target_sec|duration }} · {{ t.resolved_p1_p2_incidents }} resolved P1/P2</span>
+  </div>
+  <div class="card kpi rise">
+    <span class="kpi-label">SLA · {{ m.month }}</span>
+    <span class="kpi-value {{ 'tone-bad' if m.sla_breached else 'tone-ok' }}">{{ 'Breached' if m.sla_breached else 'On target' }}</span>
+    <span class="kpi-note">
+      {% if m.sla_credit_eligible %}{{ m.credit_percent }}% credit applies this month
+      {% elif m.mttr_seconds is none %}No resolved P1/P2 incidents yet
+      {% else %}Month average {{ m.mttr_seconds|duration }}{% endif %}
+    </span>
+  </div>
+</section>
+
+<section class="split">
+  <div class="card rise">
+    <div class="card-head">
+      <h2>Time to remediate</h2>
+      <div class="legend" aria-hidden="true"><span>Daily mean</span><span class="lg-target">SLA target</span></div>
+    </div>
+    {{ chart|safe }}
+  </div>
+  <div class="card rise">
+    <div class="card-head">
+      <h2>Recent drift</h2>
+      <a class="faint" href="/app/events">View all</a>
+    </div>
+    {% if recent %}
+    <div class="list">
+      {% for e in recent %}
+      <a class="list-item row-link" href="/app/events/{{ e.drift_id }}">
+        {{ severity(e.severity) }}
+        <div class="grow">
+          <div class="rule">{{ e.rule_name or 'Unnamed rule' }}</div>
+          <div class="faint">{{ e.device_hostname }} · {{ time(e.detected_at) }}</div>
+        </div>
+        {{ state_pill(e.remediated_at, e.job_state) }}
+      </a>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty"><h3>No drift yet</h3><p>Events appear here as soon as an appliance reports a change.</p></div>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}

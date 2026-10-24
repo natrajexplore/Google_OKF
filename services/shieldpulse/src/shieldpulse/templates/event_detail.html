@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% from "_macros.html" import severity, state_pill, time %}
+{% block title %}{{ event.rule_name or 'Drift event' }}{% endblock %}
+{% block content %}
+<header class="page-head">
+  <div>
+    <div class="eyebrow"><a href="/app/events">Drift events</a> / {{ event.device_hostname }}</div>
+    <h1>{{ event.rule_name or 'Unnamed rule' }}</h1>
+    <p class="muted">{{ severity(event.severity) }} &nbsp;Detected {{ time(event.detected_at) }}</p>
+  </div>
+  {{ state_pill(event.remediated_at, job.state if job else None) }}
+</header>
+
+<section class="split">
+  <div class="card rise">
+    <div class="card-head"><h2>What changed</h2></div>
+    <dl class="facts">
+      {% set diff = event.diff_summary or {} %}
+      <div class="fact"><dt>Source zone</dt><dd>{{ diff.source_zone or '—' }}</dd></div>
+      <div class="fact"><dt>Destination port</dt><dd class="mono">{{ diff.destination_port or '—' }}</dd></div>
+      <div class="fact"><dt>Action</dt><dd>{{ diff.action or '—' }}</dd></div>
+      <div class="fact"><dt>Device</dt><dd>{{ event.device_hostname }}</dd></div>
+      <div class="fact"><dt>Vendor</dt><dd>{{ event.vendor_type.replace('_', ' ') }}</dd></div>
+      <div class="fact"><dt>Blast radius</dt><dd>{{ event.blast_radius_score }} / 100</dd></div>
+      <div class="fact"><dt>Remediation mode</dt><dd>{{ event.remediation_mode.replace('_', ' ')|lower|capitalize }}</dd></div>
+      <div class="fact"><dt>Time to remediate</dt><dd>
+        {% if event.remediated_at %}{{ ((event.remediated_at - event.detected_at).total_seconds())|duration }}{% else %}Still open{% endif %}
+      </dd></div>
+    </dl>
+  </div>
+  <div class="card rise">
+    <div class="card-head"><h2>Timeline</h2></div>
+    <ol class="timeline">
+      {% for step in timeline %}
+      <li class="t-{{ step.state }}">
+        <span class="dot" aria-hidden="true"></span>
+        <div class="t-head"><span class="t-label">{{ step.label }}</span>{% if step.at %}<span class="faint">{{ time(step.at) }}</span>{% endif %}</div>
+        {% if step.detail %}<div class="t-detail">{{ step.detail }}</div>{% endif %}
+      </li>
+      {% endfor %}
+    </ol>
+    {% if job and job.state == 'AWAITING_APPROVAL' %}
+    <p class="faint"><br>Decide on the <a href="/app/remediation">Remediation</a> page.</p>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}

@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import hmac
 import os
-import re
 from contextlib import asynccontextmanager
 from hashlib import sha256
 from html import escape
@@ -22,6 +21,8 @@ from psycopg.types.json import Jsonb
 from pydantic import AwareDatetime, BaseModel, Field, ValidationError
 
 from shieldpulse.db import Database
+from shieldpulse.dashboard import add_dashboard
+from shieldpulse.metrics import MONTH_RE, mttr_summary
 from shieldpulse.ratelimit import RateLimiter
 from shieldpulse.remediation import InvalidToken, verify_approval_token
 from shieldpulse.scoring import score_diff
@@ -29,8 +30,6 @@ from shieldpulse.secret_store import LocalSecretStore, SecretStore
 
 # Unknown tenants and bad signatures share one response so tenant existence never leaks.
 UNAUTHORIZED = HTTPException(status_code=401, detail="Invalid tenant or signature")
-MONTH_RE = re.compile(r"\d{4}-(0[1-9]|1[0-2])")
-SLA_CREDIT_PERCENT = 5  # metrics/net_revenue_retention.md
 
 
 class DiffSummary(BaseModel):
@@ -74,8 +73,10 @@ def create_app(
     secrets: SecretStore,
     limiter: RateLimiter | None = None,
     approval_key: bytes | None = None,
+    session_key: bytes | None = None,
+    secure_cookies: bool = True,
 ) -> FastAPI:
-    """Approval endpoints are only mounted when approval_key is given."""
+    """Approval endpoints mount only when approval_key is given, the dashboard only with session_key."""
     limiter = limiter or RateLimiter()
 
     @asynccontextmanager
@@ -170,53 +171,13 @@ def create_app(
         if month is not None and not MONTH_RE.fullmatch(month):
             raise HTTPException(status_code=400, detail="month must be YYYY-MM")
         with db.tenant_tx(tenant.tenant_id) as conn:
-            row = conn.execute(
-                "WITH resolved AS ("
-                "  SELECT detected_at AT TIME ZONE 'UTC' AS detected_utc, detected_at,"
-                "         EXTRACT(EPOCH FROM (remediated_at - detected_at)) AS secs"
-                "  FROM public.policy_drift_events"
-                "  WHERE severity IN ('P1', 'P2') AND remediated_at IS NOT NULL"
-                "), billing AS ("
-                "  SELECT COALESCE(%(month)s::date, date_trunc('month', now() AT TIME ZONE 'UTC')::date) AS start"
-                ")"
-                " SELECT"
-                "  (SELECT AVG(secs)::float FROM resolved"
-                "    WHERE detected_at >= CURRENT_DATE - INTERVAL '30 days') AS trailing_mttr,"
-                "  (SELECT COUNT(*) FROM resolved"
-                "    WHERE detected_at >= CURRENT_DATE - INTERVAL '30 days') AS trailing_count,"
-                "  (SELECT AVG(secs)::float FROM resolved, billing"
-                "    WHERE detected_utc >= start AND detected_utc < start + INTERVAL '1 month') AS month_mttr,"
-                "  (SELECT COUNT(*) FROM resolved, billing"
-                "    WHERE detected_utc >= start AND detected_utc < start + INTERVAL '1 month') AS month_count,"
-                "  (SELECT to_char(start, 'YYYY-MM') FROM billing) AS month",
-                {"month": f"{month}-01" if month else None},
-            ).fetchone()
-        target = tenant.sla_mttr_target_sec
-        trailing, monthly = row["trailing_mttr"], row["month_mttr"]
-        # Confirmed 2026-10-24: a breach is the calendar month's average above target, and earns
-        # at most one 5% credit, for enterprise_plus only (metrics/net_revenue_retention.md).
-        breached = monthly is not None and monthly > target
-        credit_eligible = breached and tenant.plan_tier == "enterprise_plus"
-        return {
-            "tenant_id": str(tenant.tenant_id),
-            "sla_mttr_target_sec": target,
-            "trailing_30_days": {
-                "mttr_seconds": trailing,
-                "resolved_p1_p2_incidents": row["trailing_count"],
-                "above_target": trailing is not None and trailing > target,
-            },
-            "billing_month": {
-                "month": row["month"],
-                "mttr_seconds": monthly,
-                "resolved_p1_p2_incidents": row["month_count"],
-                "sla_breached": breached,
-                "sla_credit_eligible": credit_eligible,
-                "credit_percent": SLA_CREDIT_PERCENT if credit_eligible else 0,
-            },
-        }
+            summary = mttr_summary(conn, tenant.plan_tier, tenant.sla_mttr_target_sec, month)
+        return {"tenant_id": str(tenant.tenant_id), **summary}
 
     if approval_key is not None:
         add_approval_routes(app, db, approval_key)
+    if session_key is not None:
+        add_dashboard(app, db, session_key, secure_cookies=secure_cookies)
     return app
 
 
@@ -285,7 +246,8 @@ def add_approval_routes(app: FastAPI, db: Database, approval_key: bytes) -> None
         new_state = "APPROVED" if decision == "approve" else "REJECTED"
         with db.tenant_tx(job["tenant_id"]) as conn:
             updated = conn.execute(
-                "UPDATE public.remediation_jobs SET state = %s, updated_at = now(), run_after = now()"
+                "UPDATE public.remediation_jobs SET state = %s, updated_at = now(), run_after = now(),"
+                " decided_at = now(), decided_via = 'link'"
                 " WHERE job_id = %s AND state = 'AWAITING_APPROVAL' RETURNING job_id",
                 [new_state, job["job_id"]],
             ).fetchone()
@@ -300,4 +262,11 @@ def create_app_from_env() -> FastAPI:
     db = Database(os.environ["SHIELDPULSE_DATABASE_URL"])
     secrets = LocalSecretStore.from_file(os.environ["SHIELDPULSE_LOCAL_SECRETS"])
     approval_key = os.environ.get("SHIELDPULSE_APPROVAL_KEY")
-    return create_app(db, secrets, approval_key=approval_key.encode() if approval_key else None)
+    session_key = os.environ.get("SHIELDPULSE_SESSION_KEY")
+    return create_app(
+        db, secrets,
+        approval_key=approval_key.encode() if approval_key else None,
+        session_key=session_key.encode() if session_key else None,
+        # Browsers drop Secure cookies on plain-HTTP localhost; only disable for local dev.
+        secure_cookies=os.environ.get("SHIELDPULSE_INSECURE_COOKIES") != "1",
+    )

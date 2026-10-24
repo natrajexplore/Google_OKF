@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}ShieldPulse{% endblock %} · ShieldPulse</title>
+  <script src="/static/theme.js"></script>
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+{% from "_macros.html" import mark %}
+{% block body %}
+<div class="shell">
+  <aside class="sidebar">
+    <a class="brand" href="/app">{{ mark() }}<span class="brand-name">ShieldPulse</span></a>
+    <nav class="nav" aria-label="Main">
+      {% set items = [
+        ("/app", "Overview", "M3 13h8V3H3v10Zm0 8h8v-6H3v6Zm10 0h8V11h-8v10Zm0-18v6h8V3h-8Z"),
+        ("/app/events", "Drift events", "M3 12h4l3-8 4 16 3-8h4"),
+        ("/app/remediation", "Remediation", "M12 3a9 9 0 1 0 9 9M12 3v4m0-4 3 3"),
+        ("/app/settings", "Settings", "M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm7.4-3a7.4 7.4 0 0 0-.1-1.2l2-1.6-2-3.4-2.4 1a7.6 7.6 0 0 0-2-1.2L14.5 3h-4l-.4 2.6a7.6 7.6 0 0 0-2 1.2l-2.4-1-2 3.4 2 1.6a7.4 7.4 0 0 0 0 2.4l-2 1.6 2 3.4 2.4-1a7.6 7.6 0 0 0 2 1.2l.4 2.6h4l.4-2.6a7.6 7.6 0 0 0 2-1.2l2.4 1 2-3.4-2-1.6c.1-.4.1-.8.1-1.2Z"),
+      ] %}
+      {% for href, label, icon in items %}
+        {% set active = path == href or (href != "/app" and path.startswith(href)) %}
+        <a href="{{ href }}"{% if active %} aria-current="page"{% endif %}>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{ icon }}"/></svg>
+          {{ label }}
+          {% if href == "/app/remediation" and user.awaiting_count %}<span class="count" aria-label="{{ user.awaiting_count }} awaiting approval">{{ user.awaiting_count }}</span>{% endif %}
+        </a>
+      {% endfor %}
+    </nav>
+    <div class="sidebar-foot">
+      <div class="who">
+        <span class="avatar" aria-hidden="true">{{ user.display_name[:1] }}</span>
+        <div class="who-text">
+          <div>{{ user.display_name }}</div>
+          <div class="faint">{{ user.org_name }}</div>
+        </div>
+      </div>
+      <div class="foot-actions">
+        <button class="btn btn-ghost btn-icon" type="button" data-theme-toggle aria-label="Toggle light or dark theme">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"/></svg>
+        </button>
+        <form class="inline-form" method="post" action="/logout">
+          <input type="hidden" name="csrf" value="{{ csrf }}">
+          <button class="btn btn-ghost btn-sm" type="submit">Sign out</button>
+        </form>
+      </div>
+    </div>
+  </aside>
+  <main class="main" id="main">
+    <div class="page">{% block content %}{% endblock %}</div>
+  </main>
+</div>
+{% endblock %}
+<script src="/static/app.js" defer></script>
+</body>
+</html>

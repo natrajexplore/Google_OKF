@@ -92,5 +92,5 @@ Still unspecified. Confirm these before treating this document as canonical:
 * How golden state is stored and versioned. The runbook mentions only a "last-known-good Git commit", and the reference implementation simulates device rollback.
 * How data moves from PostgreSQL to BigQuery (ETL/CDC tooling and freshness).
 * How the Control Plane reaches customer appliances (NETCONF/REST clients, credentials), and which notifier (Slack/PagerDuty) carries approval links.
-* Approver identity for manual approvals (SSO). Today the signed link is a bearer credential.
+* SSO for approvals. Dashboard approvals now record the signed-in [tenant_users](../tables/tenant_users.md) member, but sign-in is by password, and signed-link approvals remain anonymous bearer decisions.
 * The deployment topology: region(s), runtime, and scaling of API and worker processes.

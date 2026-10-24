@@ -1,0 +1,20 @@
+{% macro mark() -%}
+<svg class="brand-mark" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+  <path d="M16 3.5 26 7.2v8.1c0 6.3-4.2 10.9-10 13.2C10.2 26.2 6 21.6 6 15.3V7.2L16 3.5Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+  <path d="M9.5 16.5h3.6l2-4.6 3 8.2 2-3.6h2.4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
+{%- endmacro %}
+
+{% macro severity(value) -%}
+<span class="badge sev-{{ value|lower }}">{{ value }}</span>
+{%- endmacro %}
+
+{% macro state_pill(event_remediated_at, job_state) -%}
+{% if job_state %}<span class="pill st-{{ job_state|lower }}">{{ job_state.replace('_', ' ')|lower|capitalize }}</span>
+{% elif event_remediated_at %}<span class="pill st-remediated">Remediated</span>
+{% else %}<span class="pill">Open</span>{% endif %}
+{%- endmacro %}
+
+{% macro time(value) -%}
+{% if value %}<time datetime="{{ value|iso }}" data-relative>{{ value|when }}</time>{% else %}<span class="faint">—</span>{% endif %}
+{%- endmacro %}

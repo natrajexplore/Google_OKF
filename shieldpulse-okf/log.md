@@ -3,6 +3,7 @@
 Chronological audit trail of schema, metric, and operational updates across the ShieldPulse OKF bundle.
 
 ## 2026-10-24
+* **Tenant Dashboard (Draft):** Added [tenant_users.md](./tables/tenant_users.md) and the `decided_by`, `decided_at` and `decided_via` columns on [remediation_jobs.md](./tables/remediation_jobs.md), so dashboard approvals record who decided. [control_plane.md](./architecture/control_plane.md) narrows its approver-identity open question to SSO.
 * **Confirmed Draft Decisions:**
   * SLA credits use the calendar billing month, with a breach being the month's average MTTR above target (at most one 5% credit per month); see [mean_time_to_remediate.md](./metrics/mean_time_to_remediate.md) and [net_revenue_retention.md](./metrics/net_revenue_retention.md).
   * `business` tier rate limit is 2,000/min, and the webhook response codes are canonical ([ingest_telemetry.md](./apis/ingest_telemetry.md)).
