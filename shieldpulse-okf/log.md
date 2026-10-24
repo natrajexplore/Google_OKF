@@ -2,6 +2,9 @@
 
 Chronological audit trail of schema, metric, and operational updates across the ShieldPulse OKF bundle.
 
+## 2026-10-24
+* **Remediation Schema (Draft):** Added `remediation_mode` to [tenants.md](./tables/tenants.md), added `rule_name` and `diff_summary` to [policy_drift_events.md](./tables/policy_drift_events.md), and introduced [remediation_jobs.md](./tables/remediation_jobs.md) as the [runbook](./runbooks/critical_drift_remediation.md) work queue and audit trail. These are additive, nullable or defaulted columns, with no breaking change to existing queries.
+
 ## 2026-10-17
 * **Enriched Truncated Concepts:** Completed [ingest_telemetry.md](./apis/ingest_telemetry.md) (request fields, processing, draft responses and security notes) and [mean_time_to_remediate.md](./metrics/mean_time_to_remediate.md) (calculation rules, SLA thresholds, draft breach query, open questions). Inferred content is marked **Draft section**.
 * **Drafted Control Plane Architecture:** Reconstructed [control_plane.md](./architecture/control_plane.md) from existing concepts (status `draft`, open questions listed). Bundle files relocated under the bundle root and `runbook/` renamed to `runbooks/` to match [index.md](./index.md).

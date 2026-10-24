@@ -19,9 +19,6 @@ RUNBOOK_SCORE_THRESHOLD = 80
 class Score:
     severity: str
     blast_radius_score: int
-    # DRAFT: tenants has no remediation preference column, so everything defaults to the
-    # human-in-the-loop path until that is specified.
-    remediation_mode: str = "MANUAL_APPROVAL"
 
     @property
     def triggers_runbook(self) -> bool:
