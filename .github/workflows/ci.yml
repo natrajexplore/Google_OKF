@@ -23,10 +23,41 @@ jobs:
       - uses: astral-sh/setup-uv@v10.3.0
 
       - name: Install dependencies
-        run: uv sync --locked
+        run: uv sync --locked --all-packages
 
       - name: Validate OKF bundle
         run: bash validate-okf.sh
 
+      # PostgreSQL-backed service tests skip here; the db-tests job runs them.
       - name: Run tests
         run: uv run pytest -v
+
+  db-tests:
+    name: service + postgres
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 55432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 15
+    env:
+      SHIELDPULSE_TEST_ADMIN_URL: postgresql://postgres:postgres@localhost:55432/postgres
+      # Fail rather than skip if the database is unreachable.
+      SHIELDPULSE_REQUIRE_DB: "1"
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: astral-sh/setup-uv@v10.3.0
+
+      - name: Install dependencies
+        run: uv sync --locked --all-packages
+
+      - name: Run service tests
+        run: uv run pytest -v services/shieldpulse/tests
