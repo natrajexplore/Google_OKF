@@ -20,7 +20,6 @@ from shieldpulse.scoring import score_diff
 def test_score_diff(zone, port, action, severity, score, triggers):
     result = score_diff(zone, port, action)
     assert (result.severity, result.blast_radius_score, result.triggers_runbook) == (severity, score, triggers)
-    assert result.remediation_mode == "MANUAL_APPROVAL"
 
 
 def test_rate_limiter_window_and_retry_after():

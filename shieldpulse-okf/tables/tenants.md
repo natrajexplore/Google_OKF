@@ -24,6 +24,7 @@ Stores one row per subscribed enterprise organization. Every operational table i
 | `webhook_secret_arn` | `TEXT` | No | KMS ARN storing the tenant's HMAC secret for [Telemetry Ingestion Webhook](../apis/ingest_telemetry.md). |
 | `status` | `VARCHAR(20)` | No | Account lifecycle state: `ACTIVE`, `PAST_DUE`, `CHURNED`. |
 | `created_at` | `TIMESTAMPTZ` | No | Account provisioning timestamp (UTC). |
+| `remediation_mode` | `VARCHAR(20)` | No | **Draft (2026-10-24).** Tenant opt-in for automated rollback: `AUTO` or `MANUAL_APPROVAL` (default). Copied onto each event in [policy_drift_events](./policy_drift_events.md). |
 
 ## Relationships & Joins
 * **Downstream Drift Telemetry:** Joined one-to-many with [policy_drift_events](./policy_drift_events.md) on `tenants.tenant_id = policy_drift_events.tenant_id`.

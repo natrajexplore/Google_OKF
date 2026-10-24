@@ -25,9 +25,12 @@ Captures every configuration discrepancy identified by the [Control Plane](../ar
 | `remediation_mode` | `VARCHAR(20)` | No | Execution path: `AUTO` or `MANUAL_APPROVAL`. |
 | `detected_at` | `TIMESTAMPTZ` | No | UTC timestamp when drift was ingested. |
 | `remediated_at` | `TIMESTAMPTZ` | Yes | UTC timestamp when golden state was restored (`NULL` if unresolved). |
+| `rule_name` | `VARCHAR(128)` | Yes | **Draft (2026-10-24).** Name of the changed rule, used to verify convergence after rollback. |
+| `diff_summary` | `JSONB` | Yes | **Draft (2026-10-24).** The rule-level change as received from the [Telemetry Ingestion Webhook](../apis/ingest_telemetry.md). |
 
 ## Relationships & Joins
 * **Tenant Ownership:** Joins many-to-one with [tenants](./tenants.md) on `tenant_id`.
 * **SLA Calculation:** The delta between `remediated_at` and `detected_at` powers [Mean Time to Remediate (MTTR)](../metrics/mean_time_to_remediate.md).
-* **Incident Response:** Any row inserted with `severity = 'P1'` or `blast_radius_score >= 80` triggers the [Critical Drift Remediation Runbook](../runbooks/critical_drift_remediation.md).
+* **Incident Response:** Any row inserted with `severity = 'P1'` or `blast_radius_score >= 80` triggers the [Critical Drift Remediation Runbook](../runbooks/critical_drift_remediation.md), queued as a row in [remediation_jobs](./remediation_jobs.md) in the same transaction.
+* **Primary Key:** Implemented as `(drift_id, detected_at)`, because PostgreSQL requires the partition key in the primary key.
 

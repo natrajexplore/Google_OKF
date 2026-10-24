@@ -1,11 +1,11 @@
-# ShieldPulse Service — Phase 1
+# ShieldPulse Service
 
-A reference implementation of the ingestion side of the [ShieldPulse Control Plane](../../shieldpulse-okf/architecture/control_plane.md): an HMAC-authenticated FastAPI webhook that scores configuration drift and records it in PostgreSQL. **Row-level security** enforces tenant isolation.
+A reference implementation of the [ShieldPulse Control Plane](../../shieldpulse-okf/architecture/control_plane.md). An HMAC-authenticated FastAPI webhook scores configuration drift and records it in PostgreSQL, and a remediation worker runs the [P1 runbook](../../shieldpulse-okf/runbooks/critical_drift_remediation.md). **Row-level security** enforces tenant isolation throughout.
 
 | Phase | Scope | Status |
 |---|---|---|
-| **1** | Ingestion webhook, drift scoring, tenant isolation, MTTR | ✅ This package |
-| 2 | Remediation runbook: AUTO rollback, approval links, convergence check, `remediated_at` | Planned |
+| **1** | Ingestion webhook, drift scoring, tenant isolation, MTTR | ✅ Done |
+| **2** | Remediation runbook: AUTO rollback, signed approval links, convergence check, `remediated_at` | ✅ Done |
 | 3 | NRR (needs MRR history in the schema) and BigQuery analytics | Planned |
 
 ## What's Implemented — and Where It Comes From
@@ -22,7 +22,10 @@ Every behavior traces to a bundle concept. Where the bundle is silent, the code 
 | MTTR: P1/P2, resolved, trailing 30 days; credits apply to `enterprise_plus` only | [`app.py`](src/shieldpulse/app.py) | [MTTR](../../shieldpulse-okf/metrics/mean_time_to_remediate.md), [NRR](../../shieldpulse-okf/metrics/net_revenue_retention.md) |
 | **DRAFT:** response codes 202 / 400 / 401 / 429 | `app.py` | Draft section of ingest_telemetry |
 | **DRAFT:** severity and score rules (below) | `scoring.py` | Inferred from the runbook's P1 example |
-| **DRAFT:** `remediation_mode` always `MANUAL_APPROVAL` | `scoring.py` | `tenants` has no remediation-preference column |
+| Runbook: tenant must be `ACTIVE`; AUTO dispatches a signed rollback; MANUAL sends a signed approval link; poll 60s after dispatch; set `remediated_at`; check the SLA | [`worker.py`](src/shieldpulse/worker.py), [`remediation.py`](src/shieldpulse/remediation.py) | runbook |
+| **DRAFT:** `tenants.remediation_mode` (default `MANUAL_APPROVAL`), `policy_drift_events.rule_name` and `diff_summary`, and the `remediation_jobs` queue | `db/schema.sql` | Recorded in the bundle as draft schema changes ([log](../../shieldpulse-okf/log.md), 2026-10-24) |
+| **DRAFT:** 5-attempt retry budget; 4-hour approval link lifetime | `worker.py` | Not specified in the bundle |
+| **DRAFT:** simulated device and logging notifier in place of NETCONF/REST and Slack/PagerDuty | `remediation.py` | No device or notifier integration yet |
 | **DRAFT:** `business` tier limited to 500/min | `ratelimit.py` | Not specified in the bundle |
 | **DRAFT:** `GET /v1/metrics/mttr` endpoint | `app.py` | Not in the bundle |
 | **DRAFT:** local JSON secret store in place of KMS | [`secret_store.py`](src/shieldpulse/secret_store.py) | KMS integration not built yet |
@@ -53,6 +56,18 @@ uv run uvicorn --factory shieldpulse.app:create_app_from_env --port 8000
 
 Interactive API docs are served at <http://localhost:8000/docs>.
 
+Start the remediation worker in a second terminal. It connects as its own database role:
+
+```bash
+SHIELDPULSE_WORKER_DATABASE_URL="postgresql://shieldpulse_worker:shieldpulse_worker_dev@localhost:55432/shieldpulse" \
+SHIELDPULSE_DISPATCH_KEY="dev-dispatch-key" \
+SHIELDPULSE_APPROVAL_KEY="dev-approval-key" \
+SHIELDPULSE_PUBLIC_BASE_URL="http://localhost:8000" \
+uv run python -m shieldpulse.worker          # add SHIELDPULSE_CONVERGENCE_DELAY_SEC=3 for faster demos
+```
+
+Also set `SHIELDPULSE_APPROVAL_KEY` (the same value) on the API server; without it, the approval endpoints are not mounted.
+
 ### Send a Signed Snapshot
 
 ```bash
@@ -73,10 +88,10 @@ curl -X POST http://localhost:8000/v1/telemetry/drift-snapshot \
 
 Sign the **exact bytes** you send. Re-serializing the JSON (for example, pretty-printing it) changes the bytes, and the request is rejected with `401`.
 
-| Demo tenant | `X-Tenant-ID` | Tier | Secret |
+| Demo tenant | `X-Tenant-ID` | Tier, mode | Secret |
 |---|---|---|---|
-| Acme Networks | `11111111-1111-1111-1111-111111111111` | `enterprise_plus` | `dev-acme-webhook-secret` |
-| Globex Retail | `22222222-2222-2222-2222-222222222222` | `growth` | `dev-globex-webhook-secret` |
+| Acme Networks | `11111111-1111-1111-1111-111111111111` | `enterprise_plus`, **AUTO** | `dev-acme-webhook-secret` |
+| Globex Retail | `22222222-2222-2222-2222-222222222222` | `growth`, **MANUAL_APPROVAL** | `dev-globex-webhook-secret` |
 
 ## API
 
@@ -84,13 +99,41 @@ Sign the **exact bytes** you send. Re-serializing the JSON (for example, pretty-
 |---|---|---|
 | `POST /v1/telemetry/drift-snapshot` | `X-Tenant-ID` + `X-ShieldPulse-Signature` | `202` with recorded events · `400` invalid payload · `401` unknown tenant or bad signature (deliberately indistinguishable) · `429` with `Retry-After` |
 | `GET /v1/metrics/mttr` *(draft)* | Same headers, signature over the empty body | Trailing 30-day MTTR, `sla_breached`, `sla_credit_eligible` |
+| `GET /v1/remediation/approve?token=…` | Signed approval token | Confirmation page only; never changes state · `403` bad or expired token · `409` already decided |
+| `POST /v1/remediation/approve` | Token and `decision=approve\|reject` (form) | Approves or rejects, exactly once |
 | `GET /healthz` | None | `{"status": "ok"}` |
 
 Checks run in this order: **tenant lookup → signature → rate limit → payload parsing**. Unauthenticated input is never parsed.
 
+## Remediation Runbook (Phase 2)
+
+Every event that triggers the runbook gets a `remediation_jobs` row, written in the same transaction as the event, so a P1 is never left without a job. The worker then runs the [runbook](../../shieldpulse-okf/runbooks/critical_drift_remediation.md):
+
+```mermaid
+stateDiagram-v2
+    [*] --> PENDING
+    PENDING --> SKIPPED: tenant not ACTIVE
+    PENDING --> DISPATCHED: AUTO, signed rollback sent
+    PENDING --> AWAITING_APPROVAL: MANUAL, approval link sent
+    AWAITING_APPROVAL --> APPROVED: POST approve
+    AWAITING_APPROVAL --> REJECTED: POST reject
+    APPROVED --> SKIPPED: tenant no longer ACTIVE
+    APPROVED --> DISPATCHED: signed rollback sent
+    DISPATCHED --> REMEDIATED: rule gone, remediated_at set
+    DISPATCHED --> FAILED: still present after retries
+    REMEDIATED --> [*]
+```
+
+- **Claiming jobs:** workers claim with `FOR UPDATE SKIP LOCKED`, so several can run in parallel without double-processing a job.
+- **Isolation:** the claim reads only the queue. Event and tenant data are read within the job's tenant context. Only the worker role has queue-wide visibility.
+- **Signed rollbacks:** each rollback payload is canonical JSON signed with HMAC-SHA256 (`SHIELDPULSE_DISPATCH_KEY`). The simulated device rejects bad signatures.
+- **No blind rollbacks:** an event without a `rule_name` is never rolled back, because its convergence could not be verified.
+- **Safe approval links:** the link opens a confirmation page, and the approval happens on POST. Email and chat link scanners prefetch URLs, so a one-click GET could approve rollbacks nobody chose.
+- **SLA tracking:** `sla_met` on the job records whether `remediated_at - detected_at` stayed within `sla_mttr_target_sec`.
+
 ## Tenant Isolation Design
 
-- **The app connects as `shieldpulse_app`, which is neither superuser nor `BYPASSRLS`.** Superusers bypass RLS even when it is FORCEd, so this role separation is what makes the policy meaningful. A test fails if the app role ever gains those privileges.
+- **The API connects as `shieldpulse_app` and the worker as `shieldpulse_worker`.** These are login users in the group roles `shieldpulse_api_role` and `shieldpulse_worker_role`, which `schema.sql` creates and grants to. None of them is superuser or `BYPASSRLS`. Superusers bypass RLS even when it is FORCEd, so this role separation is what makes the policy meaningful. Tests fail if either role ever gains those privileges.
 - **Every transaction sets its tenant first,** using `set_config('app.current_tenant_id', …, true)`, the parameterized form of `SET LOCAL`. The setting expires at commit, so a pooled connection can't carry one tenant's context into the next checkout. A test covers this.
 - **The tenant lookup itself is RLS-scoped:** the server sets the context to the claimed `X-Tenant-ID` before reading `tenants`.
 - **Grants are on the partitioned parent table only,** so every read and write goes through its policy.
@@ -107,6 +150,7 @@ Each test session creates a throwaway database (`shieldpulse_test_<random>`), ap
 - **Scoring and rate limiting:** unit tests, no database needed
 - **Ingestion:** the happy path, auth failures, raw-byte signatures, `400` only after successful auth, `429` per tenant, and the MTTR maths
 - **RLS:** each tenant sees only its own rows, no context means no rows, cross-tenant writes and moves are rejected, and no context leaks between pooled connections
+- **Runbook:** both the AUTO and MANUAL paths end to end; SLA miss; a rollback that never converges; an unreachable device; inactive tenants (including one that goes inactive while awaiting approval); tampered, expired, forged and cross-tenant approval tokens; GET never changing state; and concurrent workers never claiming the same job
 
 Without a reachable database, the database tests **skip**. CI sets `SHIELDPULSE_REQUIRE_DB=1` so they **fail** instead. Set `SHIELDPULSE_TEST_ADMIN_URL` to use a server other than `localhost:55432`.
 
@@ -115,5 +159,8 @@ Without a reachable database, the database tests **skip**. CI sets `SHIELDPULSE_
 - **The primary key is `(drift_id, detected_at)`, not `drift_id` alone.** PostgreSQL requires the partition key in the primary key. Only a `DEFAULT` partition exists; create monthly partitions with ops tooling such as pg_partman.
 - **Rate limits are per process,** held in memory. Multiple replicas need a shared store such as Redis.
 - **Unauthenticated traffic is not rate limited,** because limits are keyed by authenticated tenant. Edge protection (WAF or API gateway) is expected in front of the service.
-- **`tenants.status` is not enforced at ingestion.** The runbook checks for `ACTIVE` before remediation, which is Phase 2.
+- **`tenants.status` is not enforced at ingestion.** Events from inactive tenants are recorded, and the worker skips their remediation.
+- **The approval link is a bearer credential.** Anyone holding it can decide, and approver identity is not captured. Add SSO before production use.
+- **No real device integration or golden-state store yet.** The rollback target is `last_known_good`, which the device is trusted to resolve.
+- **There are no migrations.** Schema changes are applied by recreating the database (`docker compose down -v`). Adopt a migration tool before any shared environment.
 - **Dev credentials** (`postgres` / `shieldpulse_app_dev`, the demo secrets) are for local use only.
